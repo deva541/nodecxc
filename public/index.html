@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Send Tokens</title>
+  <!-- Latest compiled and minified CSS -->
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+
+  <!-- jQuery library -->
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+  
+  <!-- web3.js so we can decide whether or not the eth address 
+  entered by user is valid -->
+  <script src="https://cdn.jsdelivr.net/gh/ethereum/web3.js/dist/web3.min.js"></script>
+
+  <style>
+    input {
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container" style="max-width: 600px;">
+    <h2>User Points to Tokens Dashboard</h2>
+    <!-- Signup Form is visible on /index.html -->
+    <form id="signup-form" style="display:none; max-width: 500px;" method="post" action="/signup">
+      <h3>Sign Up</h3>
+      <input type="text" name="username" class="form-control" placeholder="username" /><br />
+      <button type="submit" class="btn btn-success btn-lg">SUBMIT</button>
+    </form>
+
+    <!-- Dashboard is visible on /index.html?username=:username -->
+    <div id="dashboard" style="display: none;">
+      <table class="table table-striped table-hover" style="border: 1px solid lightgrey;">
+        <tbody>
+          <tr>
+            <td>Username</td>
+            <td id="d-username"></td>
+          </tr>   
+          <tr>
+            <td>Points</td>
+            <td id="d-points"></td>
+          </tr>
+          <tr>
+            <td>On Hold</td>
+            <td id="d-on-hold"></td>
+          </tr>
+        </tbody>
+      </table>
+      <br />
+        
+      <form style="max-width: 600px;">
+        <button type="button" id="refresh-button" class="btn btn-success">REFRESH</button><br /><br />
+
+        <input id="eth-address-input" class="form-control" placeholder="Ethereum Address" />
+        <button type="button" id="change-points-to-tokens-button" class="btn btn-success">Change Points To Tokens</button> 
+        <br /><br />
+
+        <input type="text" id="add-points-input" class="form-control" placeholder="number of points to add" />
+        <button type="button" id="add-points-button" class="btn btn-success">ADD POINTS</button>
+      </form>
+
+      <br />
+      <div id="d-last-tx" style="font-family: monospace;"></div>
+      
+      <br />
+      <div id="d-tx-list" style="font-family: monospace;">
+        
+      </div>
+
+    </div>
+  </div>
+  <script type="text/javascript">
+
+    let USERNAME,
+
+      /** 
+      `currentTxListJSON` {String}
+      Stores a JSON string of user's current transaction list 
+      for comparison while deciding when to update the display,
+      for example when a new transaction hash is there the new JSON
+      string will be different and we can update the display
+      */
+      currentTxListJSON, 
+
+      /** 
+      `lastEthTxStored` {String}
+      Stored the last transaction hash of the user for comparison as to 
+      when to update the display, for example when the transaction hash
+      is different from the one currently displayed, we can update the 
+      display
+      */
+      lastEthTxStored
+  
+    /** 
+    a utility function to check the current url for GET params,
+    like when the browser is at index.html?username=example,
+    param("username") will return "example"
+    */
+    function param(name) {
+      var f = new RegExp("\\b" + name + "=([^&]+)").exec(document.location.search);
+      if (f) return decodeURIComponent(f[1].replace(/\+/g, " "));
+    }
+
+    // if `username` is not set in the url
+    if (!(USERNAME = param("username"))) {
+      // show the signup form
+      $("#signup-form").show()
+    } else {
+      // else show the user dashboard
+      $("#dashboard").show()
+
+      // update the information about the user
+      // which includes the username, points, the user's last eth 
+      // transaction hash, the number of points of the user which are on 
+      // hold, whether the user's points are on hold or not, the user's
+      // transaction list.
+      updateInfo()
+
+      // call the `updateInfo()` every second
+      //setInterval(updateInfo, 1000)
+    }
+
+
+    // this function updates the display to show the updated
+    // information about the user in the dashboard
+    function updateInfo() {
+      $.get(`/get_user_info/${USERNAME}`)
+        .then(({points, pointsOnHold, lastEthTx, noOfPointsOnHold, txList}) => {
+          console.log(points, pointsOnHold, lastEthTx, noOfPointsOnHold)
+          
+          // if no user `username` exists
+          if (typeof pointsOnHold === 'undefined')
+            // go to signup page
+            return location.href = 'index.html'
+
+          $('#d-username').html(USERNAME)
+          $('#d-points').html(points)
+
+          // if the last ethereum transaction hash stored in our memory is 
+          // different from the updated one on the server, update the display
+          // to show the current transaction hash
+          lastEthTxStored != lastEthTx && $('#d-last-tx').html(lastEthTx?`Current Transaction: <a target="_blank" rel="noopener noreferrer" href="https://rinkeby.etherscan.io/tx/${lastEthTx}">${lastEthTx}</a>`:'')
+
+
+          // update the transaction hash stored in memory for comparison
+          // to decide whether or not to update the display in the next call
+          lastEthTxStored = lastEthTx
+
+
+          $('#d-on-hold').html((pointsOnHold?"YES":"NO") + ' ('+noOfPointsOnHold+')')
+
+          // if the current transaction list stored in our memory is 
+          // different from the one on the server then update the display
+          // to show the latest transaction list
+          JSON.stringify(txList) != currentTxListJSON && $('#d-tx-list').html(txList.length>0&&('<h3>List of My Transactions</h3>'+
+            txList.map(txHash => `<div><a target="_blank" rel="noreferrer noopener" href="https://rinkeby.etherscan.io/tx/${txHash}">${txHash}</a></div>`).reverse().join('')))
+
+          // update the list stored in memory so later it can be used
+          // for comparison to decide whether or not to update the display
+          currentTxListJSON = JSON.stringify(txList)
+
+        })
+    }
+
+
+    $("#change-points-to-tokens-button").click(() => {
+      let address = $("#eth-address-input").val().trim()
+      
+      // if the address entered by user for converting points to tokens
+      // is invalid
+      if (!(new Web3()).isAddress(address)) {
+        // show an alert and exit this function
+        return alert("Invalid Address!")
+      }
+
+      // make a POST request to /change_points_to_tokens route
+      // with `username` and `address`, `username` is needed to 
+      // get how many points to convert to tokens, and `address` is
+      // needed to send out the tokens
+      $.post('/change_points_to_tokens',{username: USERNAME, address})
+      .then(console.log)
+      .catch(({responseText}) => {
+        alert(responseText)
+      })
+    })
+
+    
+    $("#add-points-button").click(() => {
+      let additional_points = Number($("#add-points-input").val())
+
+      if (isNaN(additional_points)) return alert("Please type a number")
+      
+      // to add points to a user, make a POST request with `username`
+      // and the number of additional points (`additional_points`) to add
+      // if successful the given number is added to the user's points
+
+      console.log("ADD USER POINTS!!!")
+      $.post("/add_user_points", {username: USERNAME, additional_points})
+        .then(console.log)
+        .catch(({responseText}) => {
+          alert(responseText)
+        })
+    })
+
+    $('#refresh-button').click(() => {
+
+      // make a GET request to /refresh_user_txn/:username route to
+      // refresh the current users' transaction in case it did not get 
+      // updated on the server (maybe due to some network error? a lot of 
+      // reasons can be there :p ) but the transaction is 
+      // confirmed in blockchain
+      $.get(`/refresh_user_txn/${USERNAME}`)
+        .then(console.log)
+        .catch(console.error)
+    })
+  </script>
+</body>
+</html>
